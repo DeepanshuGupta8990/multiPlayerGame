@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+        }
+
+        #canvas1 {
+            position: absolute;
+            top: 0;
+            left: 0;
+            background: black;
+        }
+    </style>
+
+</head>
+<script src="/socket.io/socket.io.js"></script>
+
+<body>
+    <canvas id="canvas1"></canvas>
+</body>
+<script>
+    const socket = io();
+    let myPlayerId;
+    const canvas = document.getElementById("canvas1");
+    const ctx = canvas.getContext("2d");
+    const CW = canvas.width = window.innerWidth;
+    const CH = canvas.height = window.innerHeight;
+
+    let lastTime = 0;
+    let entry = false;
+    let entry1 = false;
+    class Input {
+    constructor(game) {
+        this.game = game
+        this.keys = [];
+        window.addEventListener("keydown", (e) => {
+            if ((e.key === 'ArrowDown' ||
+                 e.key === 'ArrowUp'   ||
+                 e.key === 'ArrowLeft' ||
+                 e.key === 'ArrowRight'||
+                 e.key === 'Enter'    ) && this.keys.indexOf(e.key) === -1) {
+                this.keys.push(e.key);
+            }
+        })
+        window.addEventListener("keyup", (e) => {
+            if ((e.key === 'ArrowDown' ||
+                 e.key === 'ArrowUp'   ||
+                 e.key === 'ArrowLeft' ||
+                 e.key === 'ArrowRight'||
+                 e.key === 'Enter'  ) && this.keys.indexOf(e.key) !== -1) {
+                this.keys.splice(this.keys.indexOf(e.key), 1);
+            }
+
+        })
+    }
+}
+
+    class Player {
+        constructor(x, y, radius,color) {
+            this.x = x;
+            this.y = y;
+            this.radius = radius;
+            this.color = color;
+            this.speedX = 0;
+            this.speedY = 0;
+            this.friction = 0.99;
+        }
+        draw(ctx) {
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        update(){
+            this.x += this.speedX;
+            this.y += this.speedY;
+        }
+        frc(){
+            // this.speedX = this.speedX * this.friction;
+            // this.speedY = this.speedY * this.friction;
+        }
+    }
+
+    class Projectile {
+        constructor(game, px, py) {
+            this.game = game;
+            this.px = px;
+            this.py = py
+            this.x = this.game.players[myPlayerId].x;
+            this.y = this.game.players[myPlayerId].y;
+            this.radius = 8;
+            this.dx = this.px - this.x;
+            this.dy = this.py - this.y;
+            this.speedX = this.dx * 0.09;
+            this.speedY = this.dy * 0.09;
+            this.markedForDeletion = false;
+            this.obj = {
+                x: this.x,
+                y: this.y,
+                speedX: this.speedX,
+                speedY: this.speedY
+            }
+            this.name = 'projectile';
+            socket.emit("creatingParticle", this.obj);
+            // console.log(this.game.projectiles)
+        }
+        draw(ctx) {
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        update() {
+            this.x += this.speedX;
+            this.y += this.speedY;
+            if (this.x < -this.radius || this.x > this.game.width + this.radius || this.y < -this.radius || this.y > this.game.height + this.radius) {
+                this.markedForDeletion = true
+            }
+            if (this.markedForDeletion) { this.game.projectiles.splice(this.game.projectiles.indexOf(this), 1) }
+        }
+    }
+    class ProjectilefromEnemy {
+        constructor(game, px, py, speedX, speedY) {
+            this.game = game;
+            this.px = px;
+            this.py = py
+            this.x = this.px;
+            this.y = this.py;
+            this.radius = 8;
+            this.speedX = speedX;
+            this.speedY = speedY;
+            this.markedForDeletion = false;
+            this.name = 'enemyProjectile';
+            // console.log(this.game.projectiles)
+        }
+        draw(ctx) {
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        update() {
+            this.x += this.speedX;
+            this.y += this.speedY;
+            if (this.x < -this.radius || this.x > this.game.width + this.radius || this.y < -this.radius || this.y > this.game.height + this.radius) {
+                this.markedForDeletion = true
+            }
+            if (this.markedForDeletion) { this.game.projectiles.splice(this.game.projectiles.indexOf(this), 1) }
+        }
+    }
+
+
+    class DistortedParticles {
+        constructor(game, x, y, color) {
+            this.game = game;
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.radius = Math.random() * 12 + 1;
+            this.speedX = Math.random() * 4 - 2;
+            this.speedY = Math.random() * 4 - 2;
+            this.markedForDeletion = false;
+            // console.log(this.game.distortedParticles)
+        }
+        draw(ctx) {
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        update() {
+            this.x += this.speedX;
+            this.y += this.speedY;
+            this.radius -= 0.1;
+            if (this.radius < 0.5) {
+                this.markedForDeletion = true;
+                this.game.distortedParticles.splice(this.game.distortedParticles.indexOf(this), 1)
+            }
+
+
+        }
+    }
+
+    class Game {
+        constructor(width, height, playerRadius) {
+            this.width = width;
+            this.height = height;
+            this.playerRadius = playerRadius;
+            this.input = new Input(this);
+            this.player = new Player(this.width / 2, this.height / 2, this.playerRadius);
+            this.projectiles = [];
+            this.distortedParticles = [];
+            this.enemyTimer = 0;
+            this.enemyInterval = 300;
+            this.entry = false;
+            this.even = 0;
+            this.players = {};
+            this.speed = 8;
+            // window.addEventListener("mousedown", (e) => {
+            //     // console.log(e)
+            //     this.entry = true;
+            // })
+            // window.addEventListener('mousemove',(e)=>{
+            //     if(this.entry){
+            //         if(this.even % 2 === 0){
+            //             game.projectiles.push(new Projectile(this, e.x, e.y));
+            //         }
+            //         this.even++;
+            //     }
+            // })
+            // window.addEventListener("mouseup",()=>{
+            //     this.entry = false;
+            // })
+            window.addEventListener("click", (e) => {
+                game.projectiles.push(new Projectile(this, e.x, e.y));
+            })
+            window.addEventListener("touchstart", (e) => {
+                game.projectiles.push(new Projectile(this, e.touches[0].clientX, e.touches[0].clientY))
+            })
+            this.score = 0;
+            socket.on("enemyProjectile", (obj) => {
+                game.projectiles.push(new ProjectilefromEnemy(this,obj.x,obj.y,obj.speedX,obj.speedY))
+            })
+
+        }
+        draw(ctx) {
+            // this.player.draw(ctx);
+            this.projectiles.forEach((projectile) => {
+                projectile.draw(ctx);
+            })
+            this.distortedParticles.forEach((distortedParticle) => {
+                distortedParticle.draw(ctx);
+            })
+
+            for (const id in this.players) {
+                const player = this.players[id];
+                player.draw(ctx);
+            }
+
+            //drawing score
+            ctx.save()
+            ctx.font = '20px Helvetica';
+            ctx.fillStyle = 'white'
+            ctx.fillText("Score : " + Math.floor(this.score).toFixed(0), 20, 50)
+            ctx.restore();
+        }
+        update(deltaTime) {
+
+            this.projectiles.forEach((projectile) => {
+                projectile.update();
+            })
+
+            // moving me as player
+            if(this.input.keys.includes("ArrowUp")){
+                if(this.players[myPlayerId].speedY >= 0){
+                    socket.emit('playerMove',{speedX : 0, speedY : -this.speed});
+                }
+                this.players[myPlayerId].speedY = -this.speed;
+                this.players[myPlayerId].speedX = 0;
+                entry1 = false;
+            }else if(this.input.keys.includes("ArrowDown")){
+                if(this.players[myPlayerId].speedY <= 0){
+                    socket.emit('playerMove',{speedX : 0, speedY : this.speed});
+                }
+                this.players[myPlayerId].speedY = this.speed;
+                this.players[myPlayerId].speedX = 0;
+                entry1 = false;
+            }else if(this.input.keys.includes("ArrowRight")){
+                if(this.players[myPlayerId].speedX <= 0){
+                    socket.emit('playerMove',{speedX : this.speed, speedY : 0});
+                }
+                this.players[myPlayerId].speedX = this.speed;
+                this.players[myPlayerId].speedY = 0;
+                entry1 = false;
+            }else if(this.input.keys.includes("ArrowLeft")){
+                if(this.players[myPlayerId].speedX >= 0){
+                socket.emit('playerMove',{speedX : -this.speed, speedY : 0});
+                }
+                this.players[myPlayerId].speedX = -this.speed;
+                this.players[myPlayerId].speedY = 0;
+                entry1 = false;
+            }
+            else{
+                if(this.players[myPlayerId]){
+                    if(this.players[myPlayerId].speedX !== 0 ||  this.players[myPlayerId].speedY !== 0){entry = true;}
+                    this.players[myPlayerId].speedX = 0;
+                    this.players[myPlayerId].speedY = 0;
+                    if(entry){
+                        socket.emit('playerMove',{speedX : 0, speedY : 0});
+                        entry = false;
+                        entry1 = true;
+                    }
+                }
+            }
+
+            //check collision
+            this.projectiles.forEach((projectile)=>{
+                for(const playerId in this.players){
+                    if(playerId === myPlayerId){
+                        if(projectile.name === 'enemyProjectile'){
+               const dx = this.players[playerId].x - projectile.x;
+               const dy = this.players[playerId].y - projectile.y;
+               const dist = Math.hypot(dx,dy);
+               if(dist < this.players[playerId].radius+projectile.radius){
+                this.distortedParticles.push(new DistortedParticles(this,this.players[playerId].x,this.players[playerId].y,this.players[playerId].color))
+                socket.emit("collisionDetect",dist);
+               }
+               }
+            }
+            if(playerId !== myPlayerId){
+                        if(projectile.name === 'projectile'){
+               const dx = this.players[playerId].x - projectile.x;
+               const dy = this.players[playerId].y - projectile.y;
+               const dist = Math.hypot(dx,dy);
+               if(dist < this.players[playerId].radius+projectile.radius){
+                this.distortedParticles.push(new DistortedParticles(this,this.players[playerId].x,this.players[playerId].y,this.players[playerId].color))
+                socket.emit("collisionDetect",dist);
+               }
+               }
+            }
+            if(playerId !== myPlayerId){
+                        if(projectile.name === 'enemyProjectile'){
+               const dx = this.players[playerId].x - projectile.x;
+               const dy = this.players[playerId].y - projectile.y;
+               const dist = Math.hypot(dx,dy);
+               if(dist < this.players[playerId].radius+projectile.radius){
+                this.distortedParticles.push(new DistortedParticles(this,this.players[playerId].x,this.players[playerId].y,this.players[playerId].color))
+                socket.emit("collisionDetect",dist);
+               }
+               }
+            }
+            }
+            })
+
+            // if(this.input.keys.length === 0){
+            //     socket.emit("noKeyPressed",'ok')
+            // }
+   
+            for(const playerId in this.players){
+               this.players[playerId].update();
+            
+            }
+
+        //     if(entry1){
+        //     for(const playerId in this.players){
+        //         // console.log(32432432)
+        //         this.players[playerId].frc();
+        //     }
+        //  }
+
+            //distorted particles
+            this.distortedParticles.forEach((distortedParticle) => {
+                distortedParticle.update();
+            })
+        }
+        checkCollision(){
+            
+        }
+        
+    }
+
+    const game = new Game(CW, CH, 20);
+
+    function animate(timeStamp) {
+        // ctx.clearRect(0,0,CW,CH)
+        let deltaTime = timeStamp - lastTime;
+        lastTime = timeStamp;
+        ctx.save();
+        ctx.fillStyle = "rgba(0,0,0,0.1)";
+        ctx.fillRect(0, 0, CW, CH);
+        ctx.restore()
+        game.draw(ctx);
+        game.update(deltaTime);
+        requestAnimationFrame(animate);
+    }
+    animate(0);
+
+    socket.on("connected", (id) => {
+        myPlayerId = id;
+        //    console.log(myPlayerId)
+    })
+
+    socket.on("updatedPlayer", (backendPlayers) => {
+        // console.log(backendPlayers)
+        for (const id in backendPlayers) {
+            const backendPlayer = backendPlayers[id];
+            if (!game.players[id]) {
+                game.players[id] = new Player(backendPlayer.x, backendPlayer.y, 20,backendPlayer.color)
+            }
+        }
+        // console.log(game.players);
+    })
+
+    socket.on("disConnectedPlayer", (newbackendPlayers) => {
+        // console.log(newbackendPlayers)
+        game.players = {};
+        for (const id in newbackendPlayers) {
+            const newbackendPlayer = newbackendPlayers[id];
+            if (!game.players[id]) {
+                game.players[id] = new Player(newbackendPlayer.x, newbackendPlayer.y, 20)
+            }
+        }
+        // console.log(game.players);
+    })
+
+    socket.on('playerMove',(arr)=>{
+        // if(arr[0].speedX !== 0 || arr[0].speedY !== 0){
+      game.players[arr[1]].speedX = arr[0].speedX;
+      game.players[arr[1]].speedY = arr[0].speedY;
+        // }
+    //   if(arr[0].speedX === 0 && arr[0].speedY === 0){
+        // console.log(444444)
+        // entry1 = true;
+    // }
+    //   else{
+        // console.log(3)
+        // entry1 = false;
+    // }
+    })
+
+    // socket.on("noKeyPressed1",(data)=>{
+    //     entry1 = true
+    // })
+
+    socket.on("collisionDetect",(data)=>{
+      console.log(data)
+    })
+
+
+</script>
+
+</html>
